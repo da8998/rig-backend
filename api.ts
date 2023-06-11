@@ -1,92 +1,155 @@
 import express from "express";
-import http from "http";
-import https from "https";
 import cors from "cors";
-import * as mongo from "mongodb";
-import * as types from "./types";
+import * as dotenv from "dotenv";
+import morgan from "morgan";
+import session from "express-session";
+import axios from "axios";
+import qs from "query-string";
+import { FusionAuthClient } from "@fusionauth/typescript-client";
+import packageJson from "./package.json" assert { type: "json" };
 
-const app = express();
-const httpPort: number = 3000;
-const httpsPort: number = 3443;
+const api = express();
 
-const httpServer = http.createServer(app);
-const httpsServer = https.createServer({
-    // Todo
-}, app);
+dotenv.config();
+
+const port = process.env.API_PORT;
+
+const client = new FusionAuthClient(process.env.API_KEY as string, "http://localhost:9011");
+
+api.use(cors({
+    origin: true,
+    credentials: true,
+  }), morgan("common"), express.json(),
+  session({
+    secret: process.env.SECRET as string,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: "auto",
+      httpOnly: false,
+      maxAge: 3600000,
+    },
+  })
+);
+
+const config = {
+  headers: {
+    "Content-Type": "application/x-www-form-urlencoded",
+  },
+};
+
+const url: string = `http://localhost:${process.env.FUSIONAUTH_PORT}/oauth2/token`;
+
+api.get("/oauth-callback", (req, res) => {
+  const stateFromServer = req.query.state;
+  const session: any = req.session;
+  const username = req.query.username;
+  const password = req.query.password;
+
+  if (stateFromServer !== session.stateValue) {
+    console.info("State doesn't match. uh-oh.");
+    console.info(`Saw: ${stateFromServer}, but expected: &{req.session.stateValue}`);
+    res.redirect(302, "/");
+    return;
+  }
+  axios.post(url, qs.stringify({
+        client_id: process.env.CLIENT_ID,
+        client_secret: process.env.CLIENT_SECRET,
+        grant_type: "password",
+        username: username,
+        password: password
+      }), config).then((result) => {
+        session.token = result.data.access_token;
+        res.redirect(`http://localhost:8080`);
+    })
+    .catch((error) => {
+      console.error(error);
+    });
+});
+
+api.get("/logout", (req, res) => {
+    const session: any = req.session;
+    session.destroy();
+});
+
+api.get("/login", (req, res) => {
+  const session: any = req.session;
+
+  const stateValue: string = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+  const username: any = req.query.username;
+  const password: any = req.query.password;
+  console.log(`${username} ${password}`);
+  session.stateValue = stateValue;
+
+  res.redirect(`http://localhost:${process.env.FUSIONAUTH_PORT}/oauth2/authorize?client_id=${process.env.CLIENT_ID}&redirect_uri=${process.env.REDIRECT_URI}&response_type=code&username=${username}&password=${password}&state=${stateValue}`);
+
+  
+});
+
+api.post("/register", (req, res) => {
+    client.register("", req.body).then((clientResponse) => {
+        res.send(clientResponse);
+    }).catch((error) => {
+        console.error(error);
+    })
+});
 
 
-async function connectToDatabase(path: string, collectionName: string, request: types.Request): Promise<Boolean> {
-    const client: mongo.MongoClient = new mongo.MongoClient("mongodb://localhost");
-    await client.connect();
-    const db: mongo.Db = client.db("rig-db");
-    const collection = db.collection(collectionName);
 
-    let item: any;
-
-    switch(path) {
-        case "/login":
-            item = await collection.findOne({ email_address: request.email_address });
-            if(request.password === item?.password) {
-                return true;
-            } else {
-                return false;
-            }
-        case "/register":
-            try {
-                item = await collection.insertOne({first_name: request.first_name, last_name: request.last_name, username: request.username, email_address: request.email_address, password: request.password});
-                return true;
-            } catch (error) {
-                console.error(`An error occured while registering the user account ${error}`);
-
-            }
+api.get("/user", (req, res) => {
+  const session: any = req.session;
+  if (session.token) { 
+    axios.post(`http://localhost:${process.env.FUSIONAUTH_PORT}/oauth2/introspect`, qs.stringify({
+          client_id: process.env.CLIENT_ID,
+          token: session.token,
+        })
+      ).then((result) => {
+        let introspectResponse = result.data;
+        if (introspectResponse) {
+          axios.get(`http://localhost:${process.env.FUSIONAUTH_PORT}/api/user/registration/${introspectResponse.sub}/${process.env.APPLICATION_ID}`, {
+                headers: {
+                  Authorization: process.env.API_KEY,
+                },
+              }
+            ).then((response) => {
+              res.send({
+                authState: "Authorized",
+                introspectResponse: introspectResponse,
+                body: response.data.registration,
+              });
+            }).catch((error) => {
+              res.send({
+                authState: "notAuthorized",
+            });
+              console.error(error);
+              return;
+          });
+        } else {
+          session.destroy();
+          res.send({
+            authState: "notAuthenticated",
+          });
         }
-
-    return false;
-}
-
-app.use(cors({
-    methods: ["GET", "POST"],
-    origin: "*"
-}))
-
-app.post("/login", async (req, res) => {
-    const request: types.User = {
-        _id: new mongo.ObjectId,
-        first_name: "",
-        last_name: "",
-        username: "",
-        email_address: req.query.email_address as string,
-        password: req.query.password as string
-    };
-
-    if (await connectToDatabase("/login", "Users", request)) {
-        res.sendStatus(200);
+      }).catch((error) => {
+        console.error(error);
+      });
+      
     } else {
-        res.sendStatus(403);
-    }  
+    res.send({
+      authState: "notAuthenticated",
+    });
+    
+  }
 });
 
-app.post("/register", async (req, res) => {
-    const request: types.User = {
-        _id: new mongo.ObjectId,
-        first_name: "Dylan",
-        last_name: "Armstrong",
-        username: req.query.username as string,
-        email_address: req.query.email_address as string,
-        password: req.query.password as string
-    };
+api.get("/logout", (req, res) => {
+  const session: any = req.session;
+  session.destroy();
 
-    if (await connectToDatabase("/register", "Users", request)) {
-        res.sendStatus(200);
-    } else {
-        res.sendStatus(403);
-    }  
+  res.redirect(`http://localhost:${process.env.FUSIONAUTH_PORT}/oauth2/logout?client_id=${process.env.CLIENT_ID}`);
 });
 
-httpServer.listen(httpPort, () => {
-    console.info(`Rig HTTP Server is listening on port ${httpPort}`);
-})
 
-httpsServer.listen(httpsPort, () => {
-    console.info(`Rig HTTPS Server is listening on port ${httpsPort}`);
-})
+api.listen(port, () => {
+  console.info(`Rig API v${packageJson.version}\n-------------------------------\nPort: ${port}\n--> Node.js Version: ${process.version}\n--> TypeScript Enabled!\n-----------------------------\nListening for requests...`);
+});
