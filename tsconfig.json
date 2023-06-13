@@ -8,6 +8,10 @@
     "resolvePackageJsonImports": true,
     "resolveJsonModule": true,
     "strict": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "lib": [
+      "ES2017",
+      "DOM"
+    ]
   }
 }

@@ -34,6 +34,7 @@ api.use(cors({
 
 const config = {
   headers: {
+    "Access-Control-Allow-Origin": "http://localhost:8080",
     "Content-Type": "application/x-www-form-urlencoded",
   },
 };
@@ -72,18 +73,15 @@ api.get("/logout", (req, res) => {
     session.destroy();
 });
 
-api.get("/login", (req, res) => {
+api.get("/login", async (req, res) => {
   const session: any = req.session;
 
   const stateValue: string = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
   const username: any = req.query.username;
   const password: any = req.query.password;
-  console.log(`${username} ${password}`);
   session.stateValue = stateValue;
 
-  res.redirect(`http://localhost:${process.env.FUSIONAUTH_PORT}/oauth2/authorize?client_id=${process.env.CLIENT_ID}&redirect_uri=${process.env.REDIRECT_URI}&response_type=code&username=${username}&password=${password}&state=${stateValue}`);
-
-  
+  res.redirect(`http://localhost:${process.env.FUSIONAUTH_PORT}/oauth2/authorize?client_id=${process.env.CLIENT_ID}&redirect_uri=${process.env.REDIRECT_URI}&response_type=code&state=${stateValue}&username=${username}&password=${password}`);  
 });
 
 api.post("/register", (req, res) => {
@@ -151,5 +149,5 @@ api.get("/logout", (req, res) => {
 
 
 api.listen(port, () => {
-  console.info(`Rig API v${packageJson.version}\n-------------------------------\nPort: ${port}\n--> Node.js Version: ${process.version}\n--> TypeScript Enabled!\n-----------------------------\nListening for requests...`);
+  console.info(`Rig API v${packageJson.version}\n-------------------------------\n--> Port: ${port}\n--> Node.js Version: ${process.version}\n--> TypeScript Enabled!\n-----------------------------\nListening for requests...`);
 });
