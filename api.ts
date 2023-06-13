@@ -92,10 +92,6 @@ api.post("/register", (req, res) => {
     })
 });
 
-// Testing webhook take 2
-
-
-
 api.get("/user", (req, res) => {
   const session: any = req.session;
   if (session.token) { 
