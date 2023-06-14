@@ -17,9 +17,9 @@ const port = process.env.API_PORT;
 const client = new FusionAuthClient(process.env.API_KEY as string, "http://localhost:9011");
 
 api.use(cors({
-    origin: true,
-    credentials: true,
-  }), morgan("common"), express.json(),
+  origin: true,
+  credentials: true
+}), morgan("common"), express.json(),
   session({
     secret: process.env.SECRET as string,
     resave: false,
@@ -34,7 +34,7 @@ api.use(cors({
 
 const config = {
   headers: {
-    "Access-Control-Allow-Origin": "http://localhost:8080",
+    "Access-Control-Allow-Origin": "*",
     "Content-Type": "application/x-www-form-urlencoded",
   },
 };
@@ -63,6 +63,9 @@ api.get("/oauth-callback", (req, res) => {
         session.token = result.data.access_token;
         res.redirect(`http://localhost:8080`);
     })
+    .then((res) => {
+      console.log(res);
+    })
     .catch((error) => {
       console.error(error);
     });
@@ -81,7 +84,8 @@ api.get("/login", async (req, res) => {
   const password: any = req.query.password;
   session.stateValue = stateValue;
 
-  res.redirect(`http://localhost:${process.env.FUSIONAUTH_PORT}/oauth2/authorize?client_id=${process.env.CLIENT_ID}&redirect_uri=${process.env.REDIRECT_URI}&response_type=code&state=${stateValue}&username=${username}&password=${password}`);  
+  res.redirect(`http://localhost:${process.env.FUSIONAUTH_PORT}/oauth2/authorize?client_id=${process.env.CLIENT_ID}&grant_type=password&redirect_uri=${process.env.REDIRECT_URI}&response_type=code&state=${stateValue}&username=${username}&password=${password}`);  
+
 });
 
 api.post("/register", (req, res) => {
